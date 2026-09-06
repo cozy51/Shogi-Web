@@ -39,6 +39,15 @@ describe('Sound Manager Audio Synthesis Module', () => {
     }).not.toThrow();
   });
 
+  it('safely handles startTitleMusic/stopTitleMusic without exceptions, including repeated calls', () => {
+    expect(() => {
+      soundManager.startTitleMusic();
+      soundManager.startTitleMusic();
+      soundManager.stopTitleMusic();
+      soundManager.stopTitleMusic();
+    }).not.toThrow();
+  });
+
   it('does nothing and throws no error when sound is disabled', () => {
     soundManager.enabled = false;
     expect(() => {
