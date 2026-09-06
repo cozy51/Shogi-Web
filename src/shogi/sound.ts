@@ -1,0 +1,334 @@
+// Web Audio API を用いた駒音（パチッという木と木がぶつかる音）の合成
+class SoundManager {
+  private ctx: AudioContext | null = null;
+  public enabled: boolean = true;
+
+  private initCtx() {
+    if (!this.ctx && typeof window !== 'undefined') {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        this.ctx = new AudioCtx();
+      }
+    }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+  }
+
+  // 駒を指したときの音
+  public playMoveSound() {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+
+      const now = this.ctx.currentTime;
+
+      // 1. 打撃の短いノイズ（木の硬い接触音）
+      const bufferSize = this.ctx.sampleRate * 0.04;
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.008));
+      }
+
+      const noiseSource = this.ctx.createBufferSource();
+      noiseSource.buffer = buffer;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1400, now);
+      filter.Q.setValueAtTime(3.0, now);
+
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.7, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+
+      noiseSource.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(this.ctx.destination);
+
+      noiseSource.start(now);
+
+      // 2. 盤の共鳴音（やや低いポンという余韻）
+      const osc = this.ctx.createOscillator();
+      const oscGain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(180, now + 0.07);
+
+      oscGain.gain.setValueAtTime(0.35, now);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+      osc.connect(oscGain);
+      oscGain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.08);
+    } catch {
+      // AudioContext未許可等の例外は無視
+    }
+  }
+
+  // 王手時の警戒音
+  public playCheckSound() {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(580, now);
+      osc.frequency.setValueAtTime(880, now + 0.08);
+
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.25);
+    } catch {}
+  }
+
+  // 勝利時の和風祝賀ファンファーレ（華やかな上昇和音と響き）
+  public playVictorySound() {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+
+      const now = this.ctx.currentTime;
+
+      // 祝賀アルペジオ（D5 -> G5 -> B5 -> D6）と余韻和音
+      const notes = [
+        { freq: 587.33, time: 0.00, dur: 0.18, vol: 0.22 }, // D5
+        { freq: 783.99, time: 0.12, dur: 0.20, vol: 0.24 }, // G5
+        { freq: 987.77, time: 0.24, dur: 0.22, vol: 0.26 }, // B5
+        { freq: 1174.66, time: 0.36, dur: 0.65, vol: 0.30 }, // D6
+        { freq: 783.99, time: 0.36, dur: 0.65, vol: 0.20 }, // G5 (和音)
+      ];
+
+      notes.forEach(({ freq, time, dur, vol }) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + time);
+
+        gain.gain.setValueAtTime(vol, now + time);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + time + dur);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now + time);
+        osc.stop(now + time + dur);
+      });
+    } catch {}
+  }
+
+  // 敗北時の静かな終局音
+  public playDefeatSound() {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+
+      const now = this.ctx.currentTime;
+      const notes = [
+        { freq: 392.00, time: 0.00, dur: 0.25 }, // G4
+        { freq: 329.63, time: 0.15, dur: 0.40 }, // E4
+      ];
+
+      notes.forEach(({ freq, time, dur }) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + time);
+
+        gain.gain.setValueAtTime(0.18, now + time);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + time + dur);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now + time);
+        osc.stop(now + time + dur);
+      });
+    } catch {}
+  }
+
+  // タイトル画面用の和鐘・おりんの静謐な残響音（シブい寺院の鐘・水琴窟の響き）
+  public playTitleSound() {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+
+      const now = this.ctx.currentTime;
+
+      // 和鐘の倍音構成（基音と複数の非整数倍音）
+      const bellPartials = [
+        { freq: 216, gain: 0.30, decay: 3.2 }, // 基音（低く厳かな響き）
+        { freq: 582, gain: 0.22, decay: 2.8 }, // 第1倍音
+        { freq: 844, gain: 0.18, decay: 2.2 }, // 第2倍音
+        { freq: 1265, gain: 0.12, decay: 1.6 }, // 第3倍音（金属的なきらめき）
+        { freq: 1724, gain: 0.08, decay: 1.1 }, // 高域（澄んだおりんの鈴音）
+      ];
+
+      bellPartials.forEach((partial) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        // わずかなピッチ揺らぎを与えて自然な金属共鳴を表現
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(partial.freq, now);
+        osc.frequency.linearRampToValueAtTime(partial.freq * 0.998, now + partial.decay);
+
+        gain.gain.setValueAtTime(partial.gain, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + partial.decay);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + partial.decay);
+      });
+    } catch {}
+  }
+
+  // メニュー選択時の竹打・拍子木音（小気味よい澄んだ木質クリック）
+  public playMenuClick() {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+
+      const now = this.ctx.currentTime;
+
+      // 短いバンドパスノイズ
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.03);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.005));
+      }
+
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(2200, now);
+      filter.Q.setValueAtTime(4.5, now);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.35, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      noise.start(now);
+
+      // 高い木質のトーン
+      const osc = this.ctx.createOscillator();
+      const oscGain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(920, now);
+      osc.frequency.exponentialRampToValueAtTime(600, now + 0.03);
+
+      oscGain.gain.setValueAtTime(0.25, now);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+
+      osc.connect(oscGain);
+      oscGain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.035);
+    } catch {}
+  }
+
+  // 対局開始時の和太鼓・拍子木（重厚な低音の打ち鳴らしと引き締まる空気感）
+  public playGameStartSound() {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+
+      const now = this.ctx.currentTime;
+
+      // 1. 和太鼓のドンという重低音（88Hzから40Hzへ急降下するサイン波）
+      const taikoOsc = this.ctx.createOscillator();
+      const taikoGain = this.ctx.createGain();
+
+      taikoOsc.type = 'sine';
+      taikoOsc.frequency.setValueAtTime(95, now);
+      taikoOsc.frequency.exponentialRampToValueAtTime(42, now + 0.35);
+
+      taikoGain.gain.setValueAtTime(0.65, now);
+      taikoGain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+      taikoOsc.connect(taikoGain);
+      taikoGain.connect(this.ctx.destination);
+
+      taikoOsc.start(now);
+      taikoOsc.stop(now + 0.58);
+
+      // 2. 太鼓の皮の張り（中域のアタックノイズ）
+      const hitBuffer = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * 0.06), this.ctx.sampleRate);
+      const hitData = hitBuffer.getChannelData(0);
+      for (let i = 0; i < hitData.length; i++) {
+        hitData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.012));
+      }
+      const hitSource = this.ctx.createBufferSource();
+      hitSource.buffer = hitBuffer;
+
+      const hitFilter = this.ctx.createBiquadFilter();
+      hitFilter.type = 'lowpass';
+      hitFilter.frequency.setValueAtTime(320, now);
+
+      const hitGain = this.ctx.createGain();
+      hitGain.gain.setValueAtTime(0.45, now);
+      hitGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+
+      hitSource.connect(hitFilter);
+      hitFilter.connect(hitGain);
+      hitGain.connect(this.ctx.destination);
+
+      hitSource.start(now);
+
+      // 3. 少し遅れて鳴る拍子木のカーンという音（0.12秒後）
+      const woodDelay = 0.12;
+      const woodOsc = this.ctx.createOscillator();
+      const woodGain = this.ctx.createGain();
+
+      woodOsc.type = 'triangle';
+      woodOsc.frequency.setValueAtTime(1280, now + woodDelay);
+      woodOsc.frequency.exponentialRampToValueAtTime(840, now + woodDelay + 0.15);
+
+      woodGain.gain.setValueAtTime(0.35, now + woodDelay);
+      woodGain.gain.exponentialRampToValueAtTime(0.001, now + woodDelay + 0.18);
+
+      woodOsc.connect(woodGain);
+      woodGain.connect(this.ctx.destination);
+
+      woodOsc.start(now + woodDelay);
+      woodOsc.stop(now + woodDelay + 0.20);
+    } catch {}
+  }
+}
+
+export const soundManager = new SoundManager();
