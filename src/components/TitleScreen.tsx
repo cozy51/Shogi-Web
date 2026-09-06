@@ -137,6 +137,18 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
     };
   }, []);
 
+  // タイトル画面滞在中は静謐なアンビエントBGMを流し続ける（音設定のON/OFFに追従）
+  useEffect(() => {
+    if (soundEnabled) {
+      soundManager.startTitleMusic();
+    } else {
+      soundManager.stopTitleMusic();
+    }
+    return () => {
+      soundManager.stopTitleMusic();
+    };
+  }, [soundEnabled]);
+
   const totalMatches = stats.wins + stats.losses;
   const winRate = totalMatches > 0 ? Math.round((stats.wins / totalMatches) * 100) : 0;
 
